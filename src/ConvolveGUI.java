@@ -6,6 +6,7 @@ import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import java.awt.image.ImageObserver;
 import java.io.File;
 import java.io.IOException;
@@ -24,7 +25,8 @@ import javax.swing.filechooser.FileView;
 
 public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 {
-	private final int[] verticalSobel = {-1, 2, -1, 0, 0, 0, 1, 2, 1};
+	private final int FILTER_SIZE = 3*3;
+	private final int[] verticalSobel = {-1, -2, -1, 0, 0, 0, 1, 2, 1};
 	int width;
 	int height;
 	String title;
@@ -34,10 +36,10 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 	MatrixBox matrix;
 	
 	Button openImgBtn;
-	Button convolve;
+	Button convolveBtn;
 	
-	Image originalImg;
-	Image convolutedImg;
+	BufferedImage originalImg = null;
+	BufferedImage convolutedImg = null;
 	
 	
 	JFileChooser fileDialog;
@@ -47,21 +49,26 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 	private class ImageBox extends JPanel
 	{
 		Image img;
-		public ImageBox(Image i)
+		public ImageBox()
 		{
-			super();
+
+		}
+		
+		public void setImage(Image i)
+		{
 			this.img = i;
 		}
 		
 		@Override
 		public void paint(Graphics g) {
 			super.paintComponent(g);
-			g.drawImage(img, 0, 0, null);
+			g.drawImage(img, 0, 0, this);
 		}
 	}
 	
 	private class MatrixBox extends JPanel
 	{
+		
 		JTextField[] matrixFields;
 		public MatrixBox()
 		{
@@ -82,6 +89,31 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 				this.add(matrixFields[i]);
 			}
 		}
+		
+		public int[] getFilter()
+		{
+			int[] filter = new int[FILTER_SIZE];
+			
+			for(int i = 0; i < FILTER_SIZE; i++)
+			{
+				filter[i] = Integer.parseInt(matrixFields[i].getText());
+			}
+			
+			return filter;
+		}
+		
+		public int getNormConstant()
+		{
+			int[] filter = getFilter();
+			int sum = 0;
+			
+			for(int i = 0; i < FILTER_SIZE; i++)
+			{
+				sum += filter[i];
+			}
+			
+			return sum == 0 ? 1 : sum;
+		}
 	}
 	
 	public ConvolveGUI(int width, int height, String title)
@@ -91,8 +123,8 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 		this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		
 		matrix = new MatrixBox();
-		mainImageBox = new ImageBox(originalImg);
-		newImageBox = new ImageBox(convolutedImg);
+		mainImageBox = new ImageBox();
+		newImageBox = new ImageBox();
 		
 		mainImageBox.setPreferredSize(new Dimension(500,500));
 		newImageBox.setPreferredSize(new Dimension(500,500));
@@ -100,22 +132,23 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 		openImgBtn = new Button("Open Image");
 		openImgBtn.addActionListener(this);
 		
-		convolve = new Button("Convolve");
-		convolve.addActionListener(this);
-		convolve.setMaximumSize(new Dimension(100,30));
+		convolveBtn = new Button("Convolve");
+		convolveBtn.addActionListener(this);
+		convolveBtn.setMaximumSize(new Dimension(100,30));
+		convolveBtn.setEnabled(false);
 
-		this.add(mainImageBox, BorderLayout.WEST);
+		this.add(mainImageBox, BorderLayout.CENTER);
 		this.add(newImageBox, BorderLayout.EAST);
 		
 		//this.add(matrix, BorderLayout.CENTER);
 		//this.add(openImgBtn, BorderLayout.SOUTH);
-		//this.add(convolve, BorderLayout.SOUTH);
+		//this.add(convolveBtn, BorderLayout.SOUTH);
 		this.add(new JPanel()
 		{
 			{
 				add(matrix, BorderLayout.NORTH);
 				add(openImgBtn, BorderLayout.WEST);
-				add(convolve, BorderLayout.EAST);
+				add(convolveBtn, BorderLayout.EAST);
 			}
 		}, BorderLayout.SOUTH);
 		imgFilter = new FileFilter() {
@@ -151,7 +184,7 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 			loadImage();
 		}
 		
-		if(e.getSource() == convolve)
+		if(e.getSource() == convolveBtn)
 		{
 			doConvolution();
 		}
@@ -167,16 +200,113 @@ public class ConvolveGUI extends JFrame implements ActionListener, ImageObserver
 		
 			try {
 				originalImg = ImageIO.read(file);
-				mainImageBox.repaint();
 			} catch (IOException ex) {
 				JOptionPane.showOptionDialog(this, "ERROR: Unable to load image", "Image read error", JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE, null, null, null);
 				ex.printStackTrace();
 			}
+			
+			mainImageBox.setImage(originalImg);
+			mainImageBox.repaint();
+			convolveBtn.setEnabled(true);
 		}
 	}
 	
 	private void doConvolution()
 	{
+		int imgWidth = originalImg.getWidth();
+		int imgHeight = originalImg.getHeight();
 		
+		int[] filter = new int[9];
+		
+
+		String s = originalImg.getType() == BufferedImage.TYPE_3BYTE_BGR ? "Yes" : "No";
+		//System.out.println(s);
+
+		
+		// Setup grayscale work Image
+		BufferedImage workImage = new BufferedImage(imgWidth, imgHeight, BufferedImage.TYPE_3BYTE_BGR);
+		
+		for(int i = 0; i < imgWidth; i++)
+		{
+			for(int j = 0; j < imgHeight; j++)
+			{
+				int rgb = originalImg.getRGB(i, j);
+				workImage.setRGB(i, j, rgb);
+			}
+		}
+		
+		filter = matrix.getFilter();
+		
+		for(int i = 1; i < imgWidth-1; i++)
+		{
+			for(int j = 1; j < imgHeight-1; j++)
+			{
+				/*if(isEdgePixel(i,j,imgWidth,imgHeight))
+				{
+					if(isCornerPixel(i,j,imgWidth,imgHeight))
+					{
+						
+						
+					}
+				}
+				*/
+				int bgr = originalImg.getRGB(i, j);
+
+				byte b = (byte) ((Channels.getChannels(originalImg.getRGB(Neighborhood.TL.x + i, Neighborhood.TL.y + j))[0]*filter[FILTER_SIZE-1]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TM.x + i, Neighborhood.TM.y + j))[0]*filter[FILTER_SIZE-2]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TR.x + i, Neighborhood.TR.y + j))[0]*filter[FILTER_SIZE-3]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.ML.x + i, Neighborhood.ML.y + j))[0]*filter[FILTER_SIZE-4]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MM.x + i, Neighborhood.MM.y + j))[0]*filter[FILTER_SIZE-5]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MR.x + i, Neighborhood.MR.y + j))[0]*filter[FILTER_SIZE-6]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BL.x + i, Neighborhood.BL.y + j))[0]*filter[FILTER_SIZE-7]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BM.x + i, Neighborhood.BM.y + j))[0]*filter[FILTER_SIZE-8]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BR.x + i, Neighborhood.BR.y + j))[0]*filter[FILTER_SIZE-9]));
+
+				byte g = (byte) ((Channels.getChannels(originalImg.getRGB(Neighborhood.TL.x + i, Neighborhood.TL.y + j))[1]*filter[FILTER_SIZE-1]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TM.x + i, Neighborhood.TM.y + j))[1]*filter[FILTER_SIZE-2]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TR.x + i, Neighborhood.TR.y + j))[1]*filter[FILTER_SIZE-3]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.ML.x + i, Neighborhood.ML.y + j))[1]*filter[FILTER_SIZE-4]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MM.x + i, Neighborhood.MM.y + j))[1]*filter[FILTER_SIZE-5]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MR.x + i, Neighborhood.MR.y + j))[1]*filter[FILTER_SIZE-6]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BL.x + i, Neighborhood.BL.y + j))[1]*filter[FILTER_SIZE-7]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BM.x + i, Neighborhood.BM.y + j))[1]*filter[FILTER_SIZE-8]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BR.x + i, Neighborhood.BR.y + j))[1]*filter[FILTER_SIZE-9]));
+				
+				byte r = (byte) ((Channels.getChannels(originalImg.getRGB(Neighborhood.TL.x + i, Neighborhood.TL.y + j))[2]*filter[FILTER_SIZE-1]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TM.x + i, Neighborhood.TM.y + j))[2]*filter[FILTER_SIZE-2]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.TR.x + i, Neighborhood.TR.y + j))[2]*filter[FILTER_SIZE-3]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.ML.x + i, Neighborhood.ML.y + j))[2]*filter[FILTER_SIZE-4]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MM.x + i, Neighborhood.MM.y + j))[2]*filter[FILTER_SIZE-5]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.MR.x + i, Neighborhood.MR.y + j))[2]*filter[FILTER_SIZE-6]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BL.x + i, Neighborhood.BL.y + j))[2]*filter[FILTER_SIZE-7]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BM.x + i, Neighborhood.BM.y + j))[2]*filter[FILTER_SIZE-8]) +
+						  (Channels.getChannels(originalImg.getRGB(Neighborhood.BR.x + i, Neighborhood.BR.y + j))[2]*filter[FILTER_SIZE-9]));
+				
+				//rgb2 /= matrix.getNormConstant();
+				int bgrResult = Channels.getBGR(b, g, r);
+				workImage.setRGB(i, j, bgrResult);
+				
+			}
+		}
+		
+		newImageBox.setImage(workImage);
+		newImageBox.repaint();
+	}
+	
+	private boolean isEdgePixel(int x, int y, int width, int height)
+	{
+		return x == 0 || x == (width - 1) ? true : y == 0 || y == (height-1) ? true : false;
+	}
+	
+	private boolean isCornerPixel(int x, int y, int width, int height)
+	{
+		if(x == 0 || x == (width - 1))
+		{
+			if(y == 0 || y == (width - 1))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 }
